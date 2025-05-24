@@ -1,5 +1,3 @@
-# wnv_drought_kern
-
 *Manuscript in revisions*
 
 **The paradoxical impact of drought on West Nile virus risk: insights from long-term ecological data**
