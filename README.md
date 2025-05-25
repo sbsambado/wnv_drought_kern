@@ -9,6 +9,7 @@ Authors: S Sambado*, T J Sipin, Z Rennie, A Larsen, J Cunningham, A Quandt, D So
 R version 4.4.1
 
 *package versions*
+- broom_1.0.5
 - fixest_0.12.1
 - ggplot2_3.5.2
 - ggmap_4.0.0
