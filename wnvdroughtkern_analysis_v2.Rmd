@@ -1,0 +1,667 @@
+---
+title: "Analysis"
+output: html_document
+date: "2025-05-24"
+---
+
+This script is to re-create the analysis for the following manuscript:
+
+**Title** The paradoxical impact of drought on West Nile virus risk: insights from long-term ecological data
+
+*Authors* S Sambado*, T J Sipin, Z Rennie, A Larsen, J Cunningham, A Quandt, D Sousa, A J MacDonald
+
+*corresponding author: sbsambado-at-ucsb.edu / ssambado-at-stanford.edu
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## upload necessary packages
+library(fixest)
+library(sandwich)
+library(broom)
+
+
+## upload necessary data
+# mosquito abundances full
+abund_tar_full <- read.csv("data/abund_tar_full_clean.csv") %>% dplyr::select(-X)
+abund_quin_full <- read.csv("data/abund_quinq_full_clean.csv") %>% dplyr::select(-X)
+
+# panel data for abundances
+abund_tar_panel <- read.csv("data/abund_tar_panel_clean.csv") %>% dplyr::select(-X)
+abund_quin_panel <- read.csv("data/abund_quin_panel_clean.csv") %>% dplyr::select(-X)
+# panel data for wnv mir 
+wnv_tar_panel <- read.csv("data/wnvmir_tar_panel_clean.csv")  %>% dplyr::select(-X)
+wnv_quin_panel <- read.csv("data/wnvmir_quin_panel_clean.csv")  %>% dplyr::select(-X)
+
+# covariate information
+trap_station <- read.csv("data/trapstation_info_clean.csv") %>% dplyr::select(-X)
+arbonet_human <- read.csv("data/arbonet_ca_clean.csv")
+```
+
+
+#Main Text
+
+##Abstract
+```{r}
+## total trap nights
+abund_tar_full %>% 
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(trap_nights, na.rm = TRUE)) # 528,627	
+
+abund_quin_full %>%
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(trap_nights, na.rm = TRUE)) # 528,627	
+
+## total years
+range(abund_tar_full$year) # 2010 2023
+range(abund_quin_full$year) # 2010 2023
+```
+
+
+##Introduction & Methods
+```{r}
+## total trap stations
+length(unique(trap_station$id)) # 278
+
+## total mosquitos
+abund_tar_full %>% 
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(total_mosquitoes, na.rm = TRUE)) # 2,353,573	
+
+abund_quin_full %>% 
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(total_mosquitoes, na.rm = TRUE)) # 1,321,196
+
+2353573 + 1321196	 # 3,674,769
+
+## total cluster ID
+length(unique(trap_station$clust)) # 96
+```
+
+
+##Results
+
+###Summary
+```{r}
+## total mosquitos
+abund_tar_full %>% 
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(total_mosquitoes, na.rm = TRUE), # 2,353,573	
+            mean_trapnight = round(mean(mos_per_trap_night, na.rm = TRUE),1), # 14
+            sd_trapnight = round(sd(mos_per_trap_night, na.rm = TRUE),1)) # 82.1	
+
+abund_quin_full %>% 
+  filter(month > 3 & month < 11) %>% # filter to peak mosquito months
+  summarise(total = sum(total_mosquitoes, na.rm = TRUE), # 1,321,196	
+            mean_trapnight = round(mean(mos_per_trap_night, na.rm = TRUE),1), # 9.3
+            sd_trapnight = round(sd(mos_per_trap_night, na.rm = TRUE),1)) #35
+
+
+
+## WNV
+wnv_tar_panel  %>% 
+  filter(month != "March") %>% # filter to peak mosquito months
+  summarise(mean_mir = round(mean(mir, na.rm = TRUE),1), # 3.2
+            sd_mir = round(sd(mir, na.rm = TRUE), 1)) # 9.5
+
+wnv_quin_panel  %>% 
+  filter(month != "March") %>% # filter to peak mosquito months
+  summarise(mean_mir = round(mean(mir, na.rm = TRUE),1), # 4.1
+            sd_mir = round(sd(mir, na.rm = TRUE), 1)) # 10.5
+```
+
+###Panel models
+
+Check distribution of outcomes
+```{r}
+# ### UNTRANSFORMED
+# 
+# ## ABUNDANCE
+# hist(abund_tar_panel$mos_per_trap_night) # skewed
+# range(abund_tar_panel$mos_per_trap_night, na.rm = TRUE) # 0 2464 (includes 0)
+# 
+# hist(abund_quin_panel$mos_per_trap_night) # skewed
+# range(abund_quin_panel$mos_per_trap_night, na.rm = TRUE) # 0 1124.5 (includes 0)
+# 
+# 
+# ## WNV MIR
+# hist(wnv_tar_panel$mir) # skewed
+# range(wnv_tar_panel$mir, na.rm = TRUE) # 0 83.3333 (includes 0)
+# 
+# hist(wnv_quin_panel$mir) # skewed
+# range(wnv_quin_panel$mir, na.rm = TRUE) # 0 142.8571 (includes 0)
+# 
+# 
+# ### TRANSFORMED
+# ## ABUNDANCE
+# hist(log(abund_tar_panel$mos_per_trap_night+1)) # better but still skewed
+# range(log(abund_tar_panel$mos_per_trap_night+1), na.rm = TRUE) # 0 7.809947 (includes 0)
+# 
+# hist(log(abund_quin_panel$mos_per_trap_night+1)) # better but still skewed
+# range(log(abund_quin_panel$mos_per_trap_night+1), na.rm = TRUE) # 0 7.025983 (includes 0)
+# 
+# 
+# ## WNV MIR
+# hist(log(wnv_tar_panel$mir+1)) # skewed
+# range(log(wnv_tar_panel$mir+1), na.rm = TRUE) # 0 4.434777 (includes 0)
+# 
+# hist(log(wnv_quin_panel$mir+1)) # skewed
+# range(log(wnv_quin_panel$mir+1), na.rm = TRUE) # 4.968821
+```
+
+Model construction
+```{r}
+## ABUNDANCE
+# Cx. tarsalis
+mod_abund_tar <- feols(log(mos_per_trap_night + 1) ~ # log transformed better fit, 0s in data so add 1
+                         pdsi_standardized_lag_1month + # primary covariate of interest
+                         woy_cms_mean_standardized | # control
+                         clust + month, # fixed-effects dummy variables
+                       vcov = "conley", # specify conley standard errors
+                       data = abund_tar_panel) # data in panel format
+
+# Cx. quinquefasciatus
+mod_abund_quin <- feols(log(mos_per_trap_night + 1) ~ # log transformed better fit, 0s in data so add 1
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust + month,
+                      # specify conley standard errors  
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+
+## WNV MIR
+# Cx. tarsalis
+mod_wnv_tar <- feols(log(mir + 1) ~ # log transformed better fit, 0s in data so add 1
+                       pdsi_standardized_lag_1month + 
+                       woy_cms_mean_standardized + 
+                       mean_competence_standardized |
+                       clust + month,
+                     # specify conley standard errors
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+# Cx. quinquefasciatus
+mod_wnv_quin <- feols(log(mir + 1) ~ # log transformed better fit, 0s in data so add 1
+                       pdsi_standardized_lag_1month + 
+                       woy_cms_mean_standardized + 
+                       mean_competence_standardized |
+                       clust + month,
+                     # specify conley standard errors
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+```
+
+Model summaries
+```{r}
+## abundance models
+summary(mod_abund_tar) # Cx. tarsalis result
+summary(mod_abund_quin) # Cx. quinquefasciatus result
+
+## wnv mir models
+summary(mod_wnv_tar) # Cx. tarsalis result
+summary(mod_wnv_quin) # Cx. quinquefasciatus result
+```
+
+#Tables
+
+##Table 1
+
+Mosquito surveillance
+```{r}
+## abundances
+
+# Cx. tarsalis
+abund_tar_panel %>% 
+  # calculate yearly mean and sd of mos per trap night
+  group_by(year) %>% 
+  summarise(mean = mean(mos_per_trap_night, na.rm = TRUE),
+            sd = sd(mos_per_trap_night, na.rm = TRUE)) %>%
+  # round values
+  mutate(mean = round(mean,1),
+         sd = round(sd,0))
+
+# Cx. quinquefasciatus
+abund_quin_panel %>% 
+  # calculate yearly mean and sd of mos per trap night
+  group_by(year) %>% 
+  summarise(mean = mean(mos_per_trap_night, na.rm = TRUE),
+            sd = sd(mos_per_trap_night, na.rm = TRUE)) %>% 
+  mutate(mean = round(mean,1),
+         sd = round(sd,0))
+
+## wnv mir 
+
+# Cx. tarsalis
+wnv_tar_panel %>% 
+  # calculate yearly mean and sd of wnv mir
+  group_by(year) %>% 
+  summarise(mean = mean(mir, na.rm = TRUE),
+            sd = sd(mir, na.rm = TRUE)) %>% 
+  mutate(mean = round(mean,1),
+         sd = round(sd,0))
+
+# Cx. quinquefasciatus
+wnv_quin_panel %>% 
+  # calculate yearly mean and sd of wnv mir
+  group_by(year) %>% 
+  summarise(mean = mean(mir, na.rm = TRUE),
+            sd = sd(mir, na.rm = TRUE)) %>% 
+  mutate(mean = round(mean,1),
+         sd = round(sd,0))
+```
+
+Human WNV incidence
+```{r}
+arbonet_human %>% 
+  rename(GEOID = county) %>% 
+  mutate(GEOID = str_pad(GEOID, width = 5, pad = 0), # make sure FIPS are 5 characters
+         GEOID = as.character(GEOID)) %>% 
+  filter(GEOID == "06029") %>%  # filter for Kern County
+  arrange(year) %>% # descend year order
+  # calculate incidence per 100,000 people
+  mutate(incidence = (reported_human_cases/909235)*100000, # pop based on 2020 Census in Kern
+         incidence = round(incidence,2))%>% # round
+  dplyr::select(year, incidence)
+```
+
+
+##Table 2
+```{r}
+# same as model summaries above
+## abundance models
+summary(mod_abund_tar) # Cx. tarsalis result
+summary(mod_abund_quin) # Cx. quinquefasciatus result
+
+## wnv mir models
+summary(mod_wnv_tar) # Cx. tarsalis result
+summary(mod_wnv_quin) # Cx. quinquefasciatus result
+```
+
+
+#Supporting Information
+
+##Table S1
+NA
+
+##Table S2
+NA
+
+###Table S3
+Model summaries for Cx. tarsalis abundance. 
+```{r}
+## TARSALIS
+mod_abund_tar_re_none <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized, 
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+
+mod_abund_tar_re_clust <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust,
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+mod_abund_tar_re_month <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         month,
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+
+mod_abund_tar_re_year <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         year,
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+mod_abund_tar_re_clustmonth <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust + month,
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+
+mod_abund_tar_re_clustmonthyear <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust + month + year,
+                       
+                       vcov = "conley",
+                       data = abund_tar_panel)
+
+
+
+## full summaries
+summary(mod_abund_tar_re_none)
+summary(mod_abund_tar_re_clust)
+summary(mod_abund_tar_re_month)
+summary(mod_abund_tar_re_year)
+summary(mod_abund_tar_re_clustmonth)
+summary(mod_abund_tar_re_clustmonthyear)
+
+
+## tidy summaries for supplemental table
+tidy(mod_abund_tar_re_none) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_tar_re_clust) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_tar_re_month) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_tar_re_year) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_tar_re_clustmonth) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_tar_re_clustmonthyear) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+```
+
+
+###Table S4
+Model summaries for Cx. quiq abundance. 
+```{r}
+## QUINQ
+mod_abund_quin_re_none <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized, 
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+
+mod_abund_quin_re_clust <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust,
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+mod_abund_quin_re_month <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         month,
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+
+mod_abund_quin_re_year <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         year,
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+mod_abund_quin_re_clustmonth <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust + month,
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+
+mod_abund_quin_re_clustmonthyear <- feols(log(mos_per_trap_night + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized |
+                         clust + month + year,
+                       
+                       vcov = "conley",
+                       data = abund_quin_panel)
+
+
+
+## full summaries
+summary(mod_abund_quin_re_none)
+summary(mod_abund_quin_re_clust)
+summary(mod_abund_quin_re_month)
+summary(mod_abund_quin_re_year)
+summary(mod_abund_quin_re_clustmonth)
+summary(mod_abund_quin_re_clustmonthyear)
+
+
+## tidy summaries for supplemental table
+tidy(mod_abund_quin_re_none) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_quin_re_clust) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_quin_re_month) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_quin_re_year) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_quin_re_clustmonth) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_abund_quin_re_clustmonthyear) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+```
+
+###Table S5
+Model summaries for Cx. tarsalis MIR. 
+```{r}
+mod_wnv_tar_re_none <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized, 
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+
+mod_wnv_tar_re_clust <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust,
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+mod_wnv_tar_re_month <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         month,
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+
+mod_wnv_tar_re_year <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         year,
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+mod_wnv_tar_re_clustmonth <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust + month,
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+
+mod_wnv_tar_re_clustmonthyear <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust + month + year,
+                       
+                       vcov = "conley",
+                       data = wnv_tar_panel)
+
+
+## full summaries
+summary(mod_wnv_tar_re_none)
+summary(mod_wnv_tar_re_clust)
+summary(mod_wnv_tar_re_month)
+summary(mod_wnv_tar_re_year)
+summary(mod_wnv_tar_re_clustmonth)
+summary(mod_wnv_tar_re_clustmonthyear)
+
+
+## tidy summaries for supplemental table
+tidy(mod_wnv_tar_re_none) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_tar_re_clust) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_tar_re_month) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_tar_re_year) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_tar_re_clustmonth) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_tar_re_clustmonthyear) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+```
+
+###Table S6
+Model summaries for Cx. quinq MIR. 
+```{r}
+## QUINQ
+mod_wnv_quin_re_none <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized, 
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+
+mod_wnv_quin_re_clust <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust,
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+mod_wnv_quin_re_month <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         month,
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+
+mod_wnv_quin_re_year <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         year,
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+mod_wnv_quin_re_clustmonth <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust + month,
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+
+mod_wnv_quin_re_clustmonthyear <- feols(log(mir + 1) ~ 
+                         pdsi_standardized_lag_1month + 
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized |
+                         clust + month + year,
+                       
+                       vcov = "conley",
+                       data = wnv_quin_panel)
+
+
+## full summaries
+summary(mod_wnv_quin_re_none)
+summary(mod_wnv_quin_re_clust)
+summary(mod_wnv_quin_re_month)
+summary(mod_wnv_quin_re_year)
+summary(mod_wnv_quin_re_clustmonth)
+summary(mod_wnv_quin_re_clustmonthyear)
+
+
+## tidy summaries for supplemental table
+tidy(mod_wnv_quin_re_none) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_quin_re_clust) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_quin_re_month) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_quin_re_year) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_quin_re_clustmonth) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+tidy(mod_wnv_quin_re_clustmonthyear) %>% mutate(across(where(is.numeric), ~ round(.x,2))) %>% filter(term != "(Intercept)")
+
+```
+
+
+###Table S7
+Model summaries for Vector Index
+```{r}
+## Cx. tarsalis
+vector_index_tar <- abund_tar_panel %>% 
+  left_join(wnv_tar_panel %>% dplyr::select(clust, year, month, mir, mean_competence_standardized), by = c("clust", "year", "month")) %>% 
+  mutate(vector_index = mir*mos_per_trap_night) #%>% mutate(vector_index = ((mir/1000)*mos_per_trap_night)) 
+  
+# hist(vector_index_tar$vector_index)
+# hist(log(vector_index_tar$vector_index+1))
+# range(vector_index_tar$vector_index,na.rm = TRUE) #  0.00000 37.84524
+
+mod_vi_tar <- feols(log(vector_index + 1) ~ # log transformed better fit, 0s in data so add 1
+                         pdsi_standardized_lag_1month + # primary covariate of interest
+                         woy_cms_mean_standardized +
+                         mean_competence_standardized | # control
+                         clust + month, # fixed-effects dummy variables
+                       vcov = "conley", # specify conley standard errors
+                       data = vector_index_tar) # data in panel format
+
+summary(mod_vi_tar)
+
+
+
+## Cx. quinquefasciatus
+vector_index_quin <- abund_quin_panel %>% 
+  left_join(wnv_quin_panel %>% dplyr::select(clust, year, month, mir, mean_competence_standardized), by = c("clust", "year", "month")) %>% 
+  mutate(vector_index = mir*mos_per_trap_night) #%>% mutate(vector_index = ((mir/1000)*mos_per_trap_night)) 
+
+# hist(vector_index_quin$vector_index)
+# hist(log(vector_index_quin$vector_index+1))
+# range(vector_index_quin$vector_index,na.rm = TRUE) #  0.00000 5751.111
+
+
+mod_vi_quin <- feols(log(vector_index + 1) ~ # log transformed better fit, 0s in data so add 1
+                         pdsi_standardized_lag_1month + # primary covariate of interest
+                         woy_cms_mean_standardized +
+                        mean_competence_standardized | # control
+                         clust + month, # fixed-effects dummy variables
+                       vcov = "conley", # specify conley standard errors
+                       data = vector_index_quin) # data in panel format
+
+summary(mod_vi_quin)
+
+
+```
+
