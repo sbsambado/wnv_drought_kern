@@ -11,8 +11,8 @@ R version 4.4.1
 *package versions*
 - fixest_0.12.1
 - ggplot2_3.5.2
-- ggpubr_0.6.0
 - ggmap_4.0.0
+- ggpubr_0.6.0
 - modelsummary_2.1.0
 - RColorBrewer_1.1-3
 - readr_2.1.5
